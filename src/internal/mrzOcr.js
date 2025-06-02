@@ -1,31 +1,27 @@
-'use strict';
+'use strict'
 
-const { getLinesFromImage } = require('ocr-tools');
+import ocrTools from 'ocr-tools' // Default import for CommonJS module
+import { predictImages } from '../svm.js' // Assuming `svm.js` is an ES module
 
-const { predictImages } = require('../svm');
+const { getLinesFromImage, doOcrOnLines } = ocrTools // Destructure named exports
 
-async function mrzOcr(image, roiOptions = {}) {
-  let rois;
-  roiOptions = Object.assign({}, { method: 'svm' }, roiOptions);
-  let { lines, mask, painted, averageSurface } = getLinesFromImage(
-    image,
-    roiOptions
-  );
+async function mrzOcr(image, fontFingerprint, options = {}) {
+  let rois
+  options = Object.assign({}, { method: 'svm' }, options)
+  let { lines, mask, painted, averageSurface } = getLinesFromImage(image, options)
 
-  // A line should have at least 5 ROIS (swiss driving license)
-  lines = lines.filter((line) => line.rois.length > 5);
+  lines = lines.filter(line => line.rois.length > 5)
 
-  // we keep maximum the last 3 lines
   if (lines.length > 3) {
-    lines = lines.slice(lines.length - 3, lines.length);
+    lines = lines.slice(lines.length - 3, lines.length)
   }
-  let ocrResult = [];
+  let ocrResult = []
 
-  rois = [];
+  rois = []
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]
     for (let j = 0; j < line.rois.length; j++) {
-      const roi = line.rois[j];
+      const roi = line.rois[j]
       rois.push({
         image: image.crop({
           x: roi.minX,
@@ -37,22 +33,34 @@ async function mrzOcr(image, roiOptions = {}) {
         height: roi.height,
         line: i,
         column: j
-      });
+      })
     }
   }
 
-  let predicted = await predictImages(rois.map((roi) => roi.image), 'ESC-v2');
-  predicted = predicted.map((p) => String.fromCharCode(p));
-  predicted.forEach((p, idx) => {
-    rois[idx].predicted = p;
-  });
-  let count = 0;
-  for (let line of lines) {
-    let lineText = '';
-    for (let i = 0; i < line.rois.length; i++) {
-      lineText += predicted[count++];
+  if (options.method === 'tanimoto') {
+    const ocrOptions = Object.assign({}, options.fingerprintOptions, {
+      maxNotFound: 411
+    })
+    ocrResult = doOcrOnLines(lines, fontFingerprint, ocrOptions).map(r => r.text)
+  } else if (options.method === 'svm') {
+    let predicted = await predictImages(
+      rois.map(roi => roi.image),
+      'ESC-v2'
+    )
+    predicted = predicted.map(p => String.fromCharCode(p))
+    predicted.forEach((p, idx) => {
+      rois[idx].predicted = p
+    })
+    let count = 0
+    for (let line of lines) {
+      let lineText = ''
+      for (let i = 0; i < line.rois.length; i++) {
+        lineText += predicted[count++]
+      }
+      ocrResult.push(lineText)
     }
-    ocrResult.push(lineText);
+  } else {
+    throw new Error('invalid MRZ OCR method')
   }
 
   return {
@@ -61,7 +69,7 @@ async function mrzOcr(image, roiOptions = {}) {
     mask,
     painted,
     averageSurface
-  };
+  }
 }
 
-module.exports = mrzOcr;
+export default mrzOcr

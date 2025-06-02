@@ -1,7 +1,5 @@
-'use strict';
+import { getMrz } from './getMrz.js'
+import { readMrz } from './readMrz.js'
+import { getRoiStats } from './getRoiStats.js'
 
-module.exports = {
-  getMrz: require('./getMrz'),
-  readMrz: require('./readMrz'),
-  getRoiStats: require('./getRoiStats')
-};
+export { getMrz, readMrz, getRoiStats }

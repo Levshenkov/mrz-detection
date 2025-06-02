@@ -1,9 +1,7 @@
-'use strict';
+import { getNumberToLetterHeightRatio } from './util/rois.js'
 
-const { getNumberToLetterHeightRatio } = require('./util/rois');
-
-module.exports = function getRoiStats(rois) {
+export function getRoiStats(rois) {
   return {
     numberToLetterHeightRatio: getNumberToLetterHeightRatio(rois)
-  };
-};
+  }
+}
