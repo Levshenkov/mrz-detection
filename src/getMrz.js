@@ -1,261 +1,278 @@
-/*
-  Port of the python script by Adrian Rosebrock:
-  https://www.pyimagesearch.com/2015/11/30/detecting-machine-readable-zones-in-passport-images/
+/**
+ * Port of the python script by Adrian Rosebrock:
+ * https://www.pyimagesearch.com/2015/11/30/detecting-machine-readable-zones-in-passport-images/
  */
 
-'use strict';
+import radiansDegrees from 'radians-degrees'
+import { Matrix } from 'ml-matrix'
+import { rotateDEG, translate, transform, applyToPoint, applyToPoints } from 'transformation-matrix'
 
-const radiansDegrees = require('radians-degrees');
-const { Matrix } = require('ml-matrix');
-const {
-  rotateDEG,
-  translate,
-  transform,
-  applyToPoint,
-  applyToPoints
-} = require('transformation-matrix');
+const RECT_KERNEL = getRectKernel(9, 5)
+const SQ_KERNEL = getRectKernel(19, 19)
+const MIN_RATIO = 7
+const MAX_RATIO = 14
 
-const rectKernel = getRectKernel(9, 5);
-const sqKernel = getRectKernel(19, 19);
+/**
+ * Generates a rectangular kernel used for morphological operations.
+ * @param {number} width - Width of the kernel.
+ * @param {number} height - Height of the kernel.
+ * @returns {number[][]} Rectangular kernel matrix.
+ */
+function getRectKernel(width, height) {
+  return Array.from({ length: width }, () => Array(height).fill(1))
+}
 
-function getMrz(image, options) {
+/**
+ * Main function to extract the MRZ (Machine Readable Zone) from an image.
+ * @param {object} image - The input image object.
+ * @param {object} options - Optional parameters.
+ * @param {boolean} [options.debug=false] - Flag to enable debug mode.
+ * @param {object} [options.out={}] - Object to store intermediate images if debug is enabled.
+ * @returns {object} The cropped image containing the MRZ, or debug images if debug mode is enabled.
+ */
+export function getMrz(image, options = {}) {
   try {
-    return internalGetMrz(image, options);
+    return internalGetMrz(image, options)
   } catch (e) {
-    return internalGetMrz(image.rotateLeft(), options);
+    return internalGetMrz(image.rotateLeft(), options)
   }
 }
 
-function internalGetMrz(image, options = {}) {
-  const { debug = false, out = {} } = options;
+/**
+ * Internal function to handle the extraction of the MRZ with image processing.
+ * @param {object} image - The input image object.
+ * @param {object} options - Optional parameters.
+ * @returns {object} The cropped MRZ image or debug images.
+ */
+function internalGetMrz(image, options) {
+  const { debug = false, out = {} } = options
 
-  const original = image;
+  const original = image
+  const images = out
 
-  const images = out;
+  image = applyImageProcessing(image, debug, images)
+  const originalToTreatedRatio = original.width / image.width
 
-  const resized = image.resize({ width: 500 });
-  if (debug) images.resized = resized;
+  const rois = getRois(image, debug, images)
+  const mrzRoi = filterRois(rois)
 
-  const originalToTreatedRatio = original.width / resized.width;
-  image = resized.grey();
-  if (debug) images.grey = image;
+  let toCrop = original
+  const regionTransform = rotateImageToCrop(toCrop, mrzRoi, originalToTreatedRatio)
 
-  image = image.gaussianFilter({ radius: 1 });
-  if (debug) images.gaussian = image;
+  const mrzCropOptions = calculateCropOptions(mrzRoi, originalToTreatedRatio, regionTransform, toCrop)
 
-  image = image.blackHat({ kernel: rectKernel });
-  if (debug) images.blackhat = image;
+  toCrop = applyFinalRotation(toCrop, mrzCropOptions)
+  const cropped = cropMrz(toCrop, mrzCropOptions, debug, images)
 
-  image = image.scharrFilter({
-    direction: 'x',
-    bitDepth: 32
-  });
-  image = image.abs();
-  image = image.rgba8().grey();
-  if (debug) images.scharr = image;
+  return debug ? { images } : cropped
+}
 
-  image = image.close({
-    kernel: rectKernel
-  });
-  if (debug) images.close = image;
+/**
+ * Applies a series of image processing steps to prepare the image for MRZ extraction.
+ * @param {object} image - The input image object.
+ * @param {boolean} debug - Flag to enable debug mode.
+ * @param {object} images - Object to store intermediate images if debug is enabled.
+ * @returns {object} Processed image.
+ */
+function applyImageProcessing(image, debug, images) {
+  const processImage = (img, operation, key) => {
+    img = operation(img)
+    if (debug) images[key] = img
+    return img
+  }
 
-  image = image.mask({
-    algorithm: 'otsu'
-  });
-  if (debug) images.mask = image;
+  image = processImage(image.resize({ width: 500 }), img => img.grey(), 'resized')
+  image = processImage(image.gaussianFilter({ radius: 1 }), img => img, 'grey')
+  image = processImage(image.blackHat({ kernel: RECT_KERNEL }), img => img, 'blackhat')
+  image = processImage(image.scharrFilter({ direction: 'x', bitDepth: 32 }).abs().rgba8().grey(), img => img, 'scharr')
+  image = processImage(image.close({ kernel: RECT_KERNEL }), img => img, 'close')
+  image = processImage(image.mask({ algorithm: 'otsu' }), img => img, 'mask')
+  image = processImage(image.close({ kernel: SQ_KERNEL }), img => img, 'close2')
+  image = processImage(image.erode({ iterations: 4 }).dilate({ iterations: 8 }), img => img, 'erode')
 
-  image = image.close({ kernel: sqKernel });
-  if (debug) images.close2 = image;
+  return image
+}
 
-  image = image.erode({ iterations: 4 });
-  image = image.dilate({ iterations: 8 });
-  if (debug) images.erode = image;
+/**
+ * Extracts regions of interest (ROIs) from the processed image.
+ * @param {object} image - The processed image.
+ * @param {boolean} debug - Flag to enable debug mode.
+ * @param {object} images - Object to store intermediate images if debug is enabled.
+ * @returns {object[]} Array of ROIs with metadata.
+ */
+function getRois(image, debug, images) {
+  const roiManager = image.getRoiManager()
+  roiManager.fromMask(image)
 
-  const roiManager = resized.getRoiManager();
-  roiManager.fromMask(image);
-  let rois = roiManager.getRois({
-    minSurface: 5000
-    // minWidth: 400
-  });
+  let rois = roiManager.getRois({ minSurface: 5000 })
+  let masks = rois.map(roi => roi.getMask())
 
-  let masks = rois.map((roi) => roi.getMask());
   rois = rois.map((roi, idx) => {
-    const rect = masks[idx].minimalBoundingRectangle();
-    let d1 = getDistance(rect[0], rect[1]);
-    let d2 = getDistance(rect[1], rect[2]);
-    let ratio;
-    let pt1, pt2;
-    if (d2 > d1) {
-      ratio = d2 / d1;
-      pt1 = rect[1];
-      pt2 = rect[2];
-    } else {
-      ratio = d1 / d2;
-      pt1 = rect[0];
-      pt2 = rect[1];
-    }
-    if (pt1[1] < pt2[1]) {
-      [pt1, pt2] = [pt2, pt1];
-    }
+    const rect = masks[idx].minimalBoundingRectangle()
+    const [d1, d2] = [getDistance(rect[0], rect[1]), getDistance(rect[1], rect[2])]
+    const [pt1, pt2, ratio] = d2 > d1 ? [rect[1], rect[2], d2 / d1] : [rect[0], rect[1], d1 / d2]
 
-    let angle =
-      radiansDegrees(Math.atan2(pt2[1] - pt1[1], pt2[0] - pt1[0])) % 180;
-    angle = -angle;
-
-    if (angle > 90) angle -= 180;
-    return {
-      meta: {
-        angle,
-        ratio
-      },
-      roi: roi
-    };
-  });
-
-  rois = rois.filter((roi) => checkRatio(roi.meta.ratio));
-
-  masks = rois.map((roi) => roi.roi.getMask());
-  if (rois.length === 0) {
-    throw new Error('no roi found');
-  }
-
-  if (rois.length > 1) {
-    rois.sort((a, b) => b.roi.surface - a.roi.surface);
-  }
+    const angle = -radiansDegrees(Math.atan2(pt2[1] - pt1[1], pt2[0] - pt1[0])) % 180
+    return { meta: { angle: angle > 90 ? angle - 180 : angle, ratio }, roi }
+  })
 
   if (debug) {
-    const painted = resized.clone().paintMasks(masks, {
-      distinctColor: true,
-      alpha: 50
-    });
-    images.painted = painted;
+    const painted = image.clone().paintMasks(masks, { distinctColor: true, alpha: 50 })
+    images.painted = painted
   }
 
-  let toCrop = original;
+  return rois
+}
 
-  const mrzRoi = rois[0];
-  let angle = mrzRoi.meta.angle;
-  let regionTransform;
+/**
+ * Filters the ROIs to find the most likely MRZ region.
+ * @param {object[]} rois - Array of ROIs with metadata.
+ * @returns {object} The ROI with the highest probability of being the MRZ.
+ */
+function filterRois(rois) {
+  rois = rois.filter(roi => checkRatio(roi.meta.ratio))
+
+  if (rois.length === 0) {
+    throw new Error('no roi found')
+  }
+
+  return rois.length > 1 ? rois.sort((a, b) => b.roi.surface - a.roi.surface)[0] : rois[0]
+}
+
+/**
+ * Rotates the image to align the MRZ region horizontally.
+ * @param {object} toCrop - The original image to be cropped.
+ * @param {object} mrzRoi - The ROI containing the MRZ.
+ * @param {number} originalToTreatedRatio - Ratio between original and processed image dimensions.
+ * @returns {object} The transform applied to rotate the region, if needed.
+ */
+function rotateImageToCrop(toCrop, mrzRoi) {
+  let angle = mrzRoi.meta.angle
+  let regionTransform
+
   if (Math.abs(angle) > 45) {
     if (angle < 0) {
-      toCrop = toCrop.rotateRight();
-      angle += 90;
-      regionTransform = transform(translate(toCrop.width, 0), rotateDEG(90));
+      toCrop = toCrop.rotateRight()
+      angle += 90
+      regionTransform = transform(translate(toCrop.width, 0), rotateDEG(90))
     } else {
-      toCrop = toCrop.rotateLeft();
-      angle -= 90;
-      regionTransform = transform(translate(0, toCrop.height), rotateDEG(-90));
+      toCrop = toCrop.rotateLeft()
+      angle -= 90
+      regionTransform = transform(translate(0, toCrop.height), rotateDEG(-90))
     }
   }
-  let mrzCropOptions;
-  if (Math.abs(angle) < 1) {
+
+  return regionTransform
+}
+
+/**
+ * Calculates the cropping options for the MRZ region.
+ * @param {object} mrzRoi - The ROI containing the MRZ.
+ * @param {number} originalToTreatedRatio - Ratio between original and processed image dimensions.
+ * @param {object} regionTransform - The transform applied to rotate the region, if needed.
+ * @param {object} toCrop - The image to be cropped.
+ * @returns {object} Crop options for the MRZ region.
+ */
+function calculateCropOptions(mrzRoi, originalToTreatedRatio, regionTransform, toCrop) {
+  let mrzCropOptions
+
+  if (Math.abs(mrzRoi.meta.angle) < 1) {
     mrzCropOptions = {
       x: mrzRoi.roi.minX * originalToTreatedRatio,
       y: mrzRoi.roi.minY * originalToTreatedRatio,
       width: (mrzRoi.roi.maxX - mrzRoi.roi.minX) * originalToTreatedRatio,
       height: (mrzRoi.roi.maxY - mrzRoi.roi.minY) * originalToTreatedRatio
-    };
+    }
+
     if (regionTransform) {
-      const rotated = applyToPoint(regionTransform, mrzCropOptions);
-      const tmp = mrzCropOptions.width;
-      mrzCropOptions.width = mrzCropOptions.height;
-      mrzCropOptions.height = tmp;
-      mrzCropOptions.x = rotated.x;
-      mrzCropOptions.y = rotated.y - mrzCropOptions.height;
+      const rotated = applyToPoint(regionTransform, mrzCropOptions)
+      ;[mrzCropOptions.x, mrzCropOptions.y, mrzCropOptions.width, mrzCropOptions.height] = [
+        rotated.x,
+        rotated.y - mrzCropOptions.height,
+        mrzCropOptions.height,
+        mrzCropOptions.width
+      ]
     }
   } else {
-    // convex hull relative to the original image's viewport
-    let hull = mrzRoi.roi.mask.monotoneChainConvexHull().map(([x, y]) => ({
-      x: (mrzRoi.roi.minX + x) * originalToTreatedRatio,
-      y: (mrzRoi.roi.minY + y) * originalToTreatedRatio
-    }));
-
-    if (regionTransform) {
-      hull = applyToPoints(regionTransform, hull);
-    }
-
-    const beforeRotate = toCrop;
-    const afterRotate = beforeRotate.rotate(angle, {
-      interpolation: 'bilinear'
-    });
-
-    const widthDiff = (afterRotate.width - beforeRotate.width) / 2;
-    const heightDiff = (afterRotate.height - beforeRotate.height) / 2;
-
-    const transformation = transform(
-      translate(widthDiff, heightDiff),
-      getRotationAround(beforeRotate, angle)
-    );
-
-    const rotatedHull = applyToPoints(transformation, hull);
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const point of rotatedHull) {
-      if (point.x < minX) minX = point.x;
-      if (point.x > maxX) maxX = point.x;
-      if (point.y < minY) minY = point.y;
-      if (point.y > maxY) maxY = point.y;
-    }
-
-    minX = Math.max(0, Math.round(minX));
-    minY = Math.max(0, Math.round(minY));
-    maxX = Math.min(afterRotate.width, Math.round(maxX));
-    maxY = Math.min(afterRotate.height, Math.round(maxY));
+    const hull = calculateConvexHull(mrzRoi, originalToTreatedRatio, regionTransform, toCrop)
+    const { minX, minY, maxX, maxY } = hull
 
     mrzCropOptions = {
       x: minX,
       y: minY,
       width: maxX - minX,
       height: maxY - minY
-    };
-    toCrop = afterRotate;
+    }
   }
 
-  if (mrzCropOptions.y < toCrop.height / 2) {
-    // image is upside down, turn it back
-    toCrop = toCrop.rotate(180);
-    const newXY = applyToPoint(getRotationAround(toCrop, 180), mrzCropOptions);
-    mrzCropOptions.x = newXY.x - mrzCropOptions.width;
-    mrzCropOptions.y = newXY.y - mrzCropOptions.height;
+  return mrzCropOptions
+}
+
+/**
+ * Calculates the convex hull of the MRZ region for cropping.
+ * @param {object} mrzRoi - The ROI containing the MRZ.
+ * @param {number} originalToTreatedRatio - Ratio between original and processed image dimensions.
+ * @param {object} regionTransform - The transform applied to rotate the region, if needed.
+ * @param {object} toCrop - The image to be cropped.
+ * @returns {object} Object with minX, minY, maxX, and maxY values of the convex hull.
+ */
+function calculateConvexHull(mrzRoi, originalToTreatedRatio, regionTransform, toCrop) {
+  let points = mrzRoi.roi.points.map(pt => ({ x: pt[0] * originalToTreatedRatio, y: pt[1] * originalToTreatedRatio }))
+  if (regionTransform) points = applyToPoints(regionTransform, points)
+
+  const matrix = new Matrix(points.map(pt => [pt.x, pt.y]))
+  const hullPoints = new Matrix(matrix.convexHull())
+
+  const minX = hullPoints.minColumn(0)
+  const minY = hullPoints.minColumn(1)
+  const maxX = hullPoints.maxColumn(0)
+  const maxY = hullPoints.maxColumn(1)
+
+  return { minX, minY, maxX, maxY }
+}
+
+/**
+ * Applies the final rotation to the image before cropping.
+ * @param {object} toCrop - The image to be cropped.
+ * @param {object} mrzCropOptions - Cropping options for the MRZ region.
+ * @returns {object} Rotated image, if necessary.
+ */
+function applyFinalRotation(toCrop, mrzCropOptions) {
+  if (mrzCropOptions.angle) {
+    toCrop = toCrop.rotate(mrzCropOptions.angle)
   }
-
-  let cropped = toCrop.crop(mrzCropOptions);
-  if (debug) images.crop = cropped;
-
-  return debug ? { images } : cropped;
+  return toCrop
 }
 
-function getRectKernel(w, h) {
-  const arr = new Array(w);
-  arr.fill(new Array(h).fill(1));
-  return arr;
+/**
+ * Crops the image to the MRZ region.
+ * @param {object} toCrop - The image to be cropped.
+ * @param {object} mrzCropOptions - Cropping options for the MRZ region.
+ * @param {boolean} debug - Flag to enable debug mode.
+ * @param {object} images - Object to store intermediate images if debug is enabled.
+ * @returns {object} Cropped image.
+ */
+function cropMrz(toCrop, mrzCropOptions, debug, images) {
+  const cropped = toCrop.crop(mrzCropOptions)
+  if (debug) images.cropped = cropped
+  return cropped
 }
 
+/**
+ * Checks if the ratio is within the expected range for the MRZ.
+ * @param {number} ratio - The ratio to check.
+ * @returns {boolean} True if the ratio is valid, otherwise false.
+ */
 function checkRatio(ratio) {
-  return ratio > 4 && ratio < 12;
+  return ratio > MIN_RATIO && ratio < MAX_RATIO
 }
 
-function getDistance(p1, p2) {
-  const dv = getDiffVector(p1, p2);
-  return Math.sqrt(dv.get(0, 0) * dv.get(0, 0) + dv.get(0, 1) * dv.get(0, 1));
+/**
+ * Calculates the Euclidean distance between two points.
+ * @param {number[]} point1 - First point as [x, y].
+ * @param {number[]} point2 - Second point as [x, y].
+ * @returns {number} The distance between the two points.
+ */
+function getDistance([x1, y1], [x2, y2]) {
+  return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 }
-
-function getDiffVector(p1, p2) {
-  const v1 = new Matrix([p1]);
-  const v2 = new Matrix([p2]);
-  const dv = v2.sub(v1);
-  return dv;
-}
-
-function getRotationAround(image, angle) {
-  const middle = { x: image.width / 2, y: image.height / 2 };
-  return transform(
-    translate(middle.x, middle.y),
-    rotateDEG(angle),
-    translate(-middle.x, -middle.y)
-  );
-}
-
-module.exports = getMrz;
