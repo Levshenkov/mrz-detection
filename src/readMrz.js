@@ -14,11 +14,8 @@ const ROI_OPTIONS = {
   randomColors: true
 }
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-const fingerprintOptions = {
-  baseDir: join(__dirname, '../fontData'),
+const FINGER_PRINT_OPTIONS = {
+  baseDir: join(dirname(fileURLToPath(import.meta.url)), '../fontData'),
   height: 12,
   width: 12,
   minSimilarity: 0.5,
@@ -37,13 +34,13 @@ async function loadFontDataWithCheck(options) {
   }
 }
 
-const fontFingerprint = await loadFontDataWithCheck(fingerprintOptions)
+const fontFingerprint = await loadFontDataWithCheck(FINGER_PRINT_OPTIONS)
 
 export async function readMrz(image, options = {}) {
   const { ocrResult, mask, rois } = await mrzOcr(image, fontFingerprint, {
     method: 'svm',
-    ROI_OPTIONS,
-    fingerprintOptions
+    roiOptions: ROI_OPTIONS,
+    fingerprintOptions: FINGER_PRINT_OPTIONS
   })
 
   if (options.saveName) {
