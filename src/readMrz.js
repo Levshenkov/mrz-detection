@@ -1,6 +1,6 @@
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import { join } from 'path'
 import ocrTools from 'ocr-tools'
+import { __dirname } from './util/dirname.js'
 import mrzOcr from './internal/mrzOcr.js'
 import * as symbols from './internal/symbols.js'
 
@@ -15,7 +15,7 @@ const ROI_OPTIONS = {
 }
 
 const FINGER_PRINT_OPTIONS = {
-  baseDir: join(dirname(fileURLToPath(import.meta.url)), '../fontData'),
+  baseDir: join(__dirname, '../../fontData'),
   height: 12,
   width: 12,
   minSimilarity: 0.5,

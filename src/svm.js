@@ -6,12 +6,13 @@ import Kernel from 'ml-kernel'
 import range from 'lodash.range'
 import uniq from 'lodash.uniq'
 import BSON from 'bson'
+import { __dirname } from './util/dirname.js'
 
 let SVM
 
 async function loadSVM() {
   if (!SVM) {
-    SVM = (await import('libsvm-js/wasm')).default
+    SVM = (await import('libsvm-js/wasm.js')).default
   }
   return SVM
 }
@@ -150,7 +151,7 @@ async function train(letters, SVMOptions, kernelOptions) {
 }
 
 function getFilePath(name) {
-  const dataDir = path.join(__dirname, '../models')
+  const dataDir = path.join(__dirname, '../../models')
   const fileBase = path.join(dataDir, name)
   return {
     descriptors: `${fileBase}.svm.descriptors`,
