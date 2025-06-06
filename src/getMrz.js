@@ -16,11 +16,17 @@ const SQ_KERNEL = createKernel(19, 19)
  * @param {Object} [options.out={}] - Object to store intermediate images for debugging.
  * @returns {Image|Object} - The processed MRZ image.
  */
-export function getMrz(image, options) {
+export function getMrz(image, options = {}) {
   try {
     return internalGetMrz(image, options)
   } catch (e) {
-    return internalGetMrz(image.rotateLeft(), options)
+    const rotatedImage = image.rotateLeft()
+    try {
+      return internalGetMrz(rotatedImage, options)
+    } catch (e) {
+      const rotated180Image = rotatedImage.rotateLeft()
+      return internalGetMrz(rotated180Image, options)
+    }
   }
 }
 
@@ -51,7 +57,10 @@ function internalGetMrz(image, options = {}) {
 
   rois = extractRois(rois, images, debug, originalToTreatedRatio, original)
 
-  if (rois.length === 0) throw new Error('No ROI found')
+  if (rois.length === 0) {
+    console.warn('No ROI found on initial processing')
+    throw new Error('No ROI found')
+  }
 
   const mrzRoi = rois[0]
   let { angle } = mrzRoi.meta
@@ -98,7 +107,10 @@ function processImage(image, debug = false) {
     'scharr'
   )
   image = applyFilter(image, img => img.close({ kernel: RECT_KERNEL }), {}, debug ? debugImages : null, 'close')
-  image = applyFilter(image, img => img.mask({ algorithm: 'otsu' }), {}, debug ? debugImages : null, 'mask')
+
+  // Using 'otsu' as a fallback for 'adaptive'
+  image = applyFilter(image, img => img.mask({ algorithm: 'otsu' }), {}, debug ? debugImages : null, 'otsu-mask')
+
   image = applyFilter(image, img => img.close({ kernel: SQ_KERNEL }), {}, debug ? debugImages : null, 'close2')
   image = applyFilter(
     image,
@@ -120,13 +132,10 @@ function processImage(image, debug = false) {
  * @returns {Array} - An array of processed ROIs, sorted by surface area if more than one.
  */
 function extractRois(rois, images, debug = false) {
-  // Extract masks from each ROI
   const masks = rois.map(roi => roi.getMask())
 
-  // Analyze each ROI and filter out those with invalid ratios
   rois = rois.map((roi, idx) => analyzeRoi(roi, masks[idx])).filter(roi => isValidRatio(roi.meta.ratio))
 
-  // Optionally paint masks on the resized image for debugging
   if (debug) {
     const resized = images.resized
     const painted = resized.clone().paintMasks(masks, {
@@ -136,7 +145,6 @@ function extractRois(rois, images, debug = false) {
     images.painted = painted
   }
 
-  // Sort ROIs by surface area if there is more than one
   if (rois.length > 1) {
     rois.sort((a, b) => b.roi.surface - a.roi.surface)
   }
