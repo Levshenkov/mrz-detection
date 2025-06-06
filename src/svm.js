@@ -1,11 +1,9 @@
 import path from 'path'
-import fs from 'fs-extra'
-import groupBy from 'lodash.groupby'
+import fs from 'fs/promises'
 import hog from 'hog-features'
 import Kernel from 'ml-kernel'
-import range from 'lodash.range'
-import uniq from 'lodash.uniq'
-import BSON from 'bson'
+import { BSON } from 'bson'
+import _ from 'lodash'
 import { __dirname } from './util/dirname.js'
 
 let SVM
@@ -27,7 +25,7 @@ async function loadData(dir) {
     entry.height = image.height
   }
 
-  const groupedData = groupBy(data, d => d.card)
+  const groupedData = _.groupBy(data, d => d.card)
   for (let card in groupedData) {
     const heights = groupedData[card].map(d => d.height)
     const maxHeight = Math.max(...heights)
@@ -85,8 +83,7 @@ async function predictImages(images, modelName) {
 async function applyModel(name, Xtest) {
   const SVM = await loadSVM()
   const { descriptors: descriptorsPath, model: modelPath } = getFilePath(name)
-  const bson = new BSON()
-  const { descriptors: Xtrain, kernelOptions } = bson.deserialize(await fs.readFile(descriptorsPath))
+  const { descriptors: Xtrain, kernelOptions } = BSON.deserialize(await fs.readFile(descriptorsPath))
 
   const model = await fs.readFile(modelPath, 'utf-8')
   const classifier = SVM.load(model)
@@ -95,17 +92,15 @@ async function applyModel(name, Xtest) {
 }
 
 async function createModel(letters, name, SVMOptions, kernelOptions) {
-  const SVM = await loadSVM()
   const { descriptors: descriptorsPath, model: modelPath } = getFilePath(name)
   const { descriptors, classifier } = await train(letters, SVMOptions, kernelOptions)
-  const bson = new BSON()
-  await fs.writeFile(descriptorsPath, bson.serialize({ descriptors, kernelOptions }))
+  await fs.writeFile(descriptorsPath, BSON.serialize({ descriptors, kernelOptions }))
   await fs.writeFile(modelPath, classifier.serializeModel())
 }
 
 function predict(classifier, Xtrain, Xtest, kernelOptions) {
   const kernel = getKernel(kernelOptions)
-  const Ktest = kernel.compute(Xtest, Xtrain).addColumn(0, range(1, Xtest.length + 1))
+  const Ktest = kernel.compute(Xtest, Xtrain).addColumn(0, _.range(1, Xtest.length + 1))
   return classifier.predict(Ktest)
 }
 
@@ -128,7 +123,7 @@ async function train(letters, SVMOptions, kernelOptions) {
   const Xtrain = letters.map(s => s.descriptor)
   const Ytrain = letters.map(s => s.label)
 
-  const uniqLabels = uniq(Ytrain)
+  const uniqLabels = _.uniq(Ytrain)
   if (uniqLabels.length === 1) {
     console.log('training mode: ONE_CLASS')
     SVMOptions = Object.assign({}, SVMOptionsOneClass, SVMOptions, {
@@ -145,7 +140,7 @@ async function train(letters, SVMOptions, kernelOptions) {
   var classifier = new SVM(SVMOptions)
   let kernel = getKernel(kernelOptions)
 
-  const KData = kernel.compute(Xtrain).addColumn(0, range(1, Ytrain.length + 1))
+  const KData = kernel.compute(Xtrain).addColumn(0, _.range(1, Ytrain.length + 1))
   classifier.train(KData, Ytrain)
   return { classifier, descriptors: Xtrain, oneClass }
 }

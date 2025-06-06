@@ -1,76 +1,70 @@
-'use strict';
+import path from 'path'
+import fs from 'fs/promises'
+const IJS = require('image-js').Image
 
-const path = require('path');
-
-const fs = require('fs-extra');
-const IJS = require('image-js').Image;
-
-const extensions = ['.png', '.jpeg', '.jpg'];
+const extensions = ['.png', '.jpeg', '.jpg']
 
 async function writeImages(images) {
   if (!Array.isArray(images)) {
-    images = [images];
+    images = [images]
   }
   // eslint-disable-next-line no-await-in-loop
   for (let entry of images) {
-    const { image, filePath, ...metadata } = entry;
+    const { image, filePath, ...metadata } = entry
     if (!image || !filePath) {
-      throw new Error('image and filePath props are mandatory');
+      throw new Error('image and filePath props are mandatory')
     }
 
-    const baseDir = path.resolve(path.dirname(filePath));
-    await fs.mkdirp(baseDir);
-    const metadataPath = path.join(
-      baseDir,
-      path.basename(filePath).replace(path.extname(filePath), '.json')
-    );
+    const baseDir = path.resolve(path.dirname(filePath))
+    await fs.mkdir(baseDir)
+    const metadataPath = path.join(baseDir, path.basename(filePath).replace(path.extname(filePath), '.json'))
 
-    await image.save(filePath);
-    await fs.writeJson(metadataPath, metadata);
+    await image.save(filePath)
+    await fs.writeJson(metadataPath, metadata)
   }
 }
 
 async function readImages(dir) {
-  const images = [];
-  const files = await fs.readdir(dir);
+  const images = []
+  const files = await fs.readdir(dir)
   // eslint-disable-next-line no-await-in-loop
   for (let file of files) {
-    const filePath = path.join(dir, file);
-    const stat = await fs.stat(filePath);
-    let metadata;
+    const filePath = path.join(dir, file)
+    const stat = await fs.stat(filePath)
+    let metadata
     if (stat.isFile()) {
-      const ext = path.extname(filePath);
+      const ext = path.extname(filePath)
       if (!extensions.includes(ext.toLowerCase())) {
-        continue;
+        continue
       }
-      const image = await IJS.load(filePath);
+      const image = await IJS.load(filePath)
       try {
-        metadata = await fs.readJson(
-          path.join(dir, file.replace(ext, '.json'))
-        );
+        const filePath = path.join(dir, file.replace(ext, '.json'))
+        const fileContent = fs.readFile(filePath, 'utf-8')
+        metadata = JSON.parse(fileContent)
       } catch (e) {
-        metadata = {};
+        metadata = {}
         // eslint-disable-next-line no-console
-        console.log(`no metadata associated to ${filePath} found`);
+        console.log(`no metadata associated to ${filePath} found`)
       }
-      metadata.filePath = filePath;
+      metadata.filePath = filePath
       images.push(
         Object.assign(metadata, {
           image,
           filePath
         })
-      );
+      )
     } else {
-      const dirImages = await readImages(filePath);
+      const dirImages = await readImages(filePath)
       for (let image of dirImages) {
-        images.push(image);
+        images.push(image)
       }
     }
   }
-  return images;
+  return images
 }
 
 module.exports = {
   readImages,
   writeImages
-};
+}

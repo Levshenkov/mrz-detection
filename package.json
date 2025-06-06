@@ -9,13 +9,21 @@
     "preinstall": "bash ./scripts/install-poppler.sh"
   },
   "dependencies": {
-    "file-type": "^16.5.4",
-    "image-js": "^0.35.6",
-    "ml-matrix": "6.11.1",
-    "mrz": "^4.2.0",
-    "pdf-poppler": "^0.2.1",
+    "bson": "^6.8.0",
+    "hog-features": "^1.0.0",
+    "image-js": "^0.21.0",
+    "libsvm-js": "^0.2.1",
+    "lodash": "^4.17.11",
+    "minimist": "^1.2.0",
+    "ml-array-mean": "^1.0.1",
+    "ml-array-median": "^1.0.1",
+    "ml-distance": "^2.1.1",
+    "ml-kernel": "^2.3.4",
+    "ml-matrix": "^5.0.1",
+    "ml-param-grid": "^1.0.0",
+    "mrz": "git+ssh://git@bitbucket.org/insic-development/mrz.git#dev",
+    "ocr-tools": "^0.1.1",
     "radians-degrees": "^1.0.0",
-    "tesseract.js": "^5.1.1",
     "transformation-matrix": "^1.7.0"
   },
   "devDependencies": {
