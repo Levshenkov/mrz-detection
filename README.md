@@ -1,34 +1,45 @@
-# mrz-detection
+# MRZ Parsing Package
 
-## Run scripts
+## Package Overview
 
-The best way to test the run scripts is to create a `data` directory in the root of this repo and put
-the images in sub-directories of `data`.
+This package offers a streamlined solution for extracting and parsing Machine Readable Zone (MRZ) data from images. It's designed for use cases involving identity documents like passports, visas, and ID cards. The package leverages the power of `tesseract.js`, along with the `image-js` and `mrz` libraries, to accurately detect and interpret MRZ data. `tesseract.js` enhances the package's capabilities by providing optical character recognition (OCR) to extract text from images, making it a valuable tool for developers working in fields like security, travel, or document processing.
 
-### getMrz
+## Key Features
 
-`node run/getMrz.js --dir data/imageDir`
+- **Image Loading and Processing**: Uses `image-js` to load and manipulate images, allowing for robust image processing capabilities.
+- **MRZ Detection**: The `getMrz` function identifies the MRZ portion of an image, isolating the relevant area for further processing.
+- **MRZ Reading**: The `readMrz` function extracts the raw MRZ lines from the detected area, ensuring that the data is ready for parsing.
+- **MRZ Parsing**: The `mrz` library is utilized to parse the extracted MRZ lines into a structured format, making it easier to work with the data programmatically.
+- **Error Handling**: The package includes comprehensive error handling, ensuring that any issues during image processing or MRZ extraction are caught and logged.
 
-This script will treat all PNG or JPEG images in the specified `dir` and create an `out` sub-directory
-containing the images at each step of the process.
-The purpose of this script is to locate the MRZ and crop/rotate the image to keep only this part.
+## Dependencies
+The package relies on the following dependencies:
 
-Final images will be in `data/imageDir/out/cropped`
+- image-js: For image loading and manipulation.
+- mrz: For parsing MRZ lines into structured data.
 
-### readMrz
+### Usage Example:
 
-`node run/readMrz.js --dir data/imageDir/out/cropped --reference data/imageDir/ground.csv`
+### Usage
 
-This script will attempt to read the MRZ of all images in the specified `dir` and compare the read
-data with the `reference`.
+```
+import { Image } from 'image-js'
+import { parse } from 'mrz';
+import { getMrz } from '../src/getMrz.js'
+import { readMrz } from '../src/readMrz.js'
 
-The reference should be a CSV file with the following format:
+const scanMRZ = async (id) => {
+  try {
+    const img = await Image.load(id)
+    const mrzImg = getMrz(img);
+    const mrz = await readMrz(mrzImg)
+    console.log('MRZ LINES:', mrz)
+    const parsedMrz = parse(mrz)
+    console.log('PARSED MRZ INFO:', parsedMrz)
+  } catch (error) {
+    console.error('Error scanning MRZ:', error)
+  }
+}
 
-image-name,MRZ-LINE-1,MRZ-LINE-2,MRZ-LINE-3
-
-* image-name is the filename of the original image without extension
-* MRZ-LINE-x are each line of the MRZ (two or three lines)
-
-## License
-
-[MIT](./LICENSE)
+scanMRZ('path/to/your/image.png')
+```

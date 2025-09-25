@@ -1,5 +1,5 @@
 import { getMrz } from './getMrz.js'
 import { readMrz } from './readMrz.js'
-import { getRoiStats } from './getRoiStats.js'
+import { getFileBuffer } from './pdfToImage.js'
 
-export { getMrz, readMrz, getRoiStats }
+export { getMrz, readMrz, getFileBuffer }
