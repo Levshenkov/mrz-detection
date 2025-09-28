@@ -43,3 +43,35 @@ const scanMRZ = async (id) => {
 
 scanMRZ('path/to/your/image.png')
 ```
+
+## Running MRZ Scanning from Docker
+
+You can run MRZ scanning directly inside the Docker container using a script. Here’s how:
+
+1. **Create a script (e.g., `scan.js`)** in your project root that calls the MRZ scanning function:
+
+   ```js
+   // scan.js
+   import { scanMRZ } from './src/scanMRZ.js'
+
+   // Pass the image path as a command-line argument
+   const imagePath = process.argv[2] || '/data/image.png'
+   scanMRZ(imagePath)
+   ```
+
+2. **Build the Docker image** (if you haven’t already):
+
+   ```sh
+   docker build -t mrz-detection .
+   ```
+
+3. **Run the container and mount your image file**:
+
+   ```sh
+   docker run --rm -v /path/to/your/image.png:/data/image.png mrz-detection node scan.js /data/image.png
+   ```
+
+   - Replace `/path/to/your/image.png` with the path to your image on your machine.
+   - `/data/image.png` is the path inside the container.
+
+This will execute the MRZ scan on your image inside the Docker container and print the results to your terminal.

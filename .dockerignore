@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+Dockerfile
+README.md
+src/**/*.test.js
+src/**/*.spec.js
+*.log
+*.tmp
+*.DS_Store
+*.env
